@@ -108,12 +108,17 @@ resource "aws_security_group" "fargate_sg" {
   }
 }
 
-# ECRリポジトリ（ReactアプリのDockerイメージ用）
-resource "aws_ecr_repository" "react_app" {
-  name = var.ecr_repository_name
-  tags = {
-    Name = "my-react-app-ecr"
-  }
+# 新規ECRリポジトリ作成
+# resource "aws_ecr_repository" "react_app" {
+#   name = var.ecr_repository_name
+#   tags = {
+#     Name = "my-react-app-ecr"
+#   }
+# }
+
+# 既存ECRリポジトリから取得
+data "aws_ecr_repository" "react_app" {
+  name = var.ecr_repository_name  
 }
 
 # ECSクラスタ
@@ -132,7 +137,7 @@ resource "aws_ecs_task_definition" "react_app" {
   container_definitions = jsonencode([
     {
       name      = "react-app"
-      image     = "${aws_ecr_repository.react_app.repository_url}:latest"
+      image     = "${data.aws_ecr_repository.react_app.repository_url}:latest"
       essential = true
       portMappings = [
         {
