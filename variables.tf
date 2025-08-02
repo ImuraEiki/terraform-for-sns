@@ -21,3 +21,7 @@ variable "domain_name" {
 variable "ecr_repository_name" {
   default = "my-react-app"
 }
+
+variable "ecr_image_version" {
+  default = "fbdb3a64a4acf42d3ff6e503b2e2ce4a3431a7d3"
+}
