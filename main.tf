@@ -137,7 +137,7 @@ resource "aws_ecs_task_definition" "react_app" {
   container_definitions = jsonencode([
     {
       name      = "react-app"
-      image     = "${data.aws_ecr_repository.react_app.repository_url}:latest"
+      image     = "${data.aws_ecr_repository.react_app.repository_url}:${var.ecr_image_version}"
       essential = true
       portMappings = [
         {
