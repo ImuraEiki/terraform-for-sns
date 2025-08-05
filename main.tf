@@ -160,3 +160,45 @@ resource "aws_route53_record" "www" {
     evaluate_target_health = true
   }
 }
+
+# ACM証明書（HTTPS用）
+resource "aws_acm_certificate" "cert" {
+  domain_name       = "${var.domain_name}"
+  subject_alternative_names = ["www.${var.domain_name}"]
+  validation_method = "DNS"
+}
+
+# Route 53 CNAMEレコード
+resource "aws_route53_record" "cert_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.cert.domain_validation_options : dvo.domain_name => {
+      name    = dvo.resource_record_name
+      record  = dvo.resource_record_value
+      type    = dvo.resource_record_type
+      zone_id = data.aws_route53_zone.main.zone_id
+    }
+  }
+  zone_id = each.value.zone_id
+  name    = each.value.name
+  type    = each.value.type
+  ttl     = 60
+  records = [each.value.record]
+}
+
+# 証明書とRoute 53レコードの関連付け
+resource "aws_acm_certificate_validation" "cert" {
+  certificate_arn         = aws_acm_certificate.cert.arn
+  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+}
+
+# ALBリスナー（HTTPS）
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 443
+  protocol          = "HTTPS"
+  certificate_arn   = aws_acm_certificate.cert.arn
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.react_app.arn
+  }
+}
