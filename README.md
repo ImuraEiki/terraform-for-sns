@@ -28,3 +28,6 @@ docker push ${USER_ID}.dkr.ecr.${REGION}.amazonaws.com/${REPO_NAME}:${VERSION}
 
 #### すべてを終了
 `terraform destroy -auto-approve`
+
+#### 構成図
+![](./aws.drawio.svg)
