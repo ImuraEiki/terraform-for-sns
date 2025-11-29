@@ -22,6 +22,46 @@ variable "ecr_repository_name" {
   default = "my-react-app"
 }
 
+variable "ecr_go_repository_name" {
+  default = "my-go-app"
+}
+
 variable "ecr_image_version" {
-  default = "fbdb3a64a4acf42d3ff6e503b2e2ce4a3431a7d3"
+  default = "515cf8c"
+}
+
+variable "ecr_go_image_version" {
+  default = "4186d43"
+}
+
+variable "db_host" {
+  default = ""
+  sensitive = true
+}
+
+variable "db_user" {
+  default = "eiki"
+}
+
+variable "db_password" {
+  default = ""
+  sensitive = true
+}
+
+variable "db_name" {
+  default = "portfolio"
+}
+
+variable "db_sslmode" {
+  default = "prefer"
+}
+
+variable "auth0_domain" {
+  default = ""
+  sensitive = true
+}
+
+variable "auth0_audience" {
+  default = ""
+  sensitive = true
 }
