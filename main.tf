@@ -26,66 +26,61 @@ module "vpc" {
   region                = var.region
 }
 
-# 新規ECRリポジトリ作成
-# resource "aws_ecr_repository" "react_app" {
-#   name = var.ecr_repository_name
-#   tags = {
-#     Name = "my-react-app-ecr"
-#   }
-# }
-
-# 既存ECRリポジトリから取得
-data "aws_ecr_repository" "react_app" {
-  name = var.ecr_repository_name  
+module "ecs_spa" {
+  source = "./module/ecs_spa"
+  ecr_repository_name   = var.ecr_repository_name
+  region                = var.region
+  ecr_image_version     = var.ecr_image_version
+  public_subnet_1_id    = module.vpc.public_subnet_1_id
+  public_subnet_2_id    = module.vpc.public_subnet_2_id
+  security_group_for_fargate_id = module.vpc.security_group_for_fargate_id
+  aws_lb_listener_http  = aws_lb_listener.http
+  aws_lb_target_group_react_app_arn = aws_lb_target_group.react_app.arn
+  execution_role_arn    = aws_iam_role.ecs_task_execution_role.arn
 }
 
-# ECSクラスタ
-resource "aws_ecs_cluster" "main" {
-  name = "my-cluster"
+module "ecs_api" {
+  source = "./module/ecs_api"
+  ecr_repository_name   = var.ecr_go_repository_name
+  region                = var.region
+  ecr_image_version     = var.ecr_go_image_version
+  public_subnet_1_id    = module.vpc.public_subnet_1_id
+  public_subnet_2_id    = module.vpc.public_subnet_2_id
+  security_group_for_fargate_id = module.vpc.security_group_for_fargate_id
+  aws_lb_listener_http  = aws_lb_listener.http
+  aws_lb_target_group_go_app_arn = aws_lb_target_group.go_app.arn
+  execution_role_arn    = aws_iam_role.ecs_task_execution_role.arn
+  db_host               = var.db_host
+  db_user               = var.db_user
+  db_password           = var.db_password
+  db_name               = var.db_name
+  db_sslmode            = var.db_sslmode
+  auth0_domain          = var.auth0_domain
+  auth0_audience        = var.auth0_audience
 }
 
-# ECSタスク定義（Reactアプリ）
-resource "aws_ecs_task_definition" "react_app" {
-  family                   = "my-react-app-task"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  cpu                      = "256"
-  memory                   = "512"
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-  container_definitions = jsonencode([
-    {
-      name      = "react-app"
-      image     = "${data.aws_ecr_repository.react_app.repository_url}:${var.ecr_image_version}"
-      essential = true
-      portMappings = [
-        {
-          containerPort = 3000
-          hostPort      = 3000
+# IAMロール（ECSタスク実行用）
+resource "aws_iam_role" "ecs_task_execution_role" {
+  name = "ecsTaskExecutionRoleForTerraform"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
         }
-      ]
-    }
-  ])
+      }
+    ]
+  })
 }
 
-# ECSサービス
-resource "aws_ecs_service" "react_app" {
-  name            = "my-react-app-service"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.react_app.arn
-  launch_type     = "FARGATE"
-  desired_count   = 1
-  network_configuration {
-    subnets          = [module.vpc.public_subnet_1_id, module.vpc.public_subnet_2_id]
-    security_groups  = [module.vpc.security_group_for_fargate_id]
-    assign_public_ip = true
-  }
-  load_balancer {
-    target_group_arn = aws_lb_target_group.react_app.arn
-    container_name   = "react-app"
-    container_port   = 3000
-  }
-  depends_on = [aws_lb_listener.http]
+resource "aws_iam_role_policy_attachment" "ecs_task_execution_role_policy" {
+  role       = aws_iam_role.ecs_task_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
+
 
 # ALB
 resource "aws_lb" "main" {
@@ -111,6 +106,17 @@ resource "aws_lb_target_group" "react_app" {
   }
 }
 
+resource "aws_lb_target_group" "go_app" {
+  name        = "go-api-tg"
+  port        = 8080
+  protocol    = "HTTP"
+  vpc_id      = module.vpc.vpc_id
+  target_type = "ip"
+  health_check {
+    path = "/backend/health" 
+  }
+}
+
 # ALBリスナー（HTTP）
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
@@ -122,26 +128,20 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-# IAMロール（ECSタスク実行用）
-resource "aws_iam_role" "ecs_task_execution_role" {
-  name = "ecsTaskExecutionRoleForTerraform"
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
+resource "aws_lb_listener_rule" "go_app_rule" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 10
 
-resource "aws_iam_role_policy_attachment" "ecs_task_execution_role_policy" {
-  role       = aws_iam_role.ecs_task_execution_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.go_app.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/backend/*"]
+    }
+  }
 }
 
 # Route 53ホストゾーン（既存を想定）
@@ -200,5 +200,21 @@ resource "aws_lb_listener" "https" {
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.react_app.arn
+  }
+}
+
+resource "aws_lb_listener_rule" "https_go_app_rule" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 10
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.go_app.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/backend/*"]
+    }
   }
 }
